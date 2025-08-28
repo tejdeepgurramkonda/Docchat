@@ -569,6 +569,100 @@ def _get_api_recommendations(diagnostics: dict) -> list:
     
     return recommendations
 
+@app.get("/admin/test-api-key")
+async def test_api_key():
+    """
+    Simple test of Google API key without creating QA engines
+    """
+    import os
+    
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        
+        if not api_key:
+            return {
+                "status": "error",
+                "message": "GOOGLE_API_KEY environment variable not set",
+                "solution": "Set your Google API key in Railway environment variables"
+            }
+        
+        if not api_key.startswith("AIzaSy"):
+            return {
+                "status": "error", 
+                "message": "API key format appears invalid",
+                "key_preview": f"{api_key[:10]}..." if len(api_key) > 10 else api_key,
+                "solution": "Verify your API key from Google AI Studio"
+            }
+        
+        # Test the API key with a minimal request
+        try:
+            import google.generativeai as genai
+            
+            # Configure the API
+            genai.configure(api_key=api_key)
+            
+            # Simple test - list models (this uses minimal quota)
+            models = list(genai.list_models())
+            
+            if models:
+                return {
+                    "status": "success",
+                    "message": "API key is valid and working",
+                    "available_models": len(models),
+                    "sample_models": [model.name for model in models[:3]]
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "API key valid but no models accessible",
+                    "solution": "Check your API key permissions"
+                }
+                
+        except ImportError:
+            return {
+                "status": "error",
+                "message": "google-generativeai package not available",
+                "solution": "This is expected in LangChain setup - try /admin/api-diagnostics instead"
+            }
+        except Exception as api_error:
+            error_str = str(api_error)
+            
+            if "403" in error_str:
+                return {
+                    "status": "error",
+                    "message": "API key doesn't have permission",
+                    "error": error_str,
+                    "solution": "Check your API key permissions in Google Cloud Console"
+                }
+            elif "429" in error_str:
+                return {
+                    "status": "error", 
+                    "message": "Rate limit exceeded",
+                    "error": error_str,
+                    "solution": "Wait a few minutes or check your quota limits"
+                }
+            elif "500" in error_str:
+                return {
+                    "status": "error",
+                    "message": "Google AI service temporarily unavailable", 
+                    "error": error_str,
+                    "solution": "This is a temporary Google service issue - try again in 5-10 minutes"
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "API test failed",
+                    "error": error_str,
+                    "solution": "Check your internet connection and API key"
+                }
+    
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Test failed: {str(e)}",
+            "solution": "Check server logs for detailed error information"
+        }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

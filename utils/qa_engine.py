@@ -131,69 +131,93 @@ Answer:"""
             # Note: This is handled at FastAPI level, not Streamlit
             raise e
 
-    def answer_question(self, question: str) -> str:
+    def answer_question(self, question: str, max_retries: int = 2) -> str:
         """
         Answer a question using the QA chain, with streaming + stoppable generation.
+        Includes retry logic for temporary API failures.
         """
         if not self.qa_chain:
             return "QA system is not properly initialized. Please check your configuration."
         if not question.strip():
             return "Please provide a valid question."
 
-        try:
-            logger.info(f"Processing question: {question}")
-            reset_stop()
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info(f"Processing question (attempt {attempt + 1}): {question}")
+                reset_stop()
 
-            # Collect streamed answer
-            answer_parts: List[str] = []
-            handler = _StreamingStopHandler(on_token=lambda t: answer_parts.append(t))
+                # Collect streamed answer
+                answer_parts: List[str] = []
+                handler = _StreamingStopHandler(on_token=lambda t: answer_parts.append(t))
 
-            # Invoke the chain; tokens will arrive via handler
-            response = self.qa_chain({"query": question}, callbacks=[handler])
+                # Invoke the chain; tokens will arrive via handler
+                response = self.qa_chain({"query": question}, callbacks=[handler])
 
-            # Prefer the streamed tokens; fall back to `result` if no tokens were streamed.
-            answer = "".join(answer_parts).strip()
-            if not answer:
-                answer = response.get("result", "⚠️ I couldn't generate an answer.")
-            return answer
+                # Prefer the streamed tokens; fall back to `result` if no tokens were streamed.
+                answer = "".join(answer_parts).strip()
+                if not answer:
+                    answer = response.get("result", "⚠️ I couldn't generate an answer.")
+                return answer
 
-        except KeyboardInterrupt:
-            logger.warning("Generation stopped by user")
-            return "⚠️ Chat stopped by user."
-        except Exception as e:
-            error_str = str(e)
-            logger.error(f"Error answering question: {error_str}")
-            
-            # Handle specific Google API errors
-            if "500 An internal error has occurred" in error_str:
-                return "🔧 Google AI service is temporarily unavailable. This could be due to:\n" \
-                       "• API quota limits reached\n" \
-                       "• Temporary service outage\n" \
-                       "• High request volume\n\n" \
-                       "Please try again in a few minutes. If the issue persists, check your API quota at: " \
-                       "https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas"
-            elif "400" in error_str or "invalid" in error_str.lower():
-                return "❌ Invalid request to Google AI service. Please check:\n" \
-                       "• Your API key is valid\n" \
-                       "• The request format is correct\n" \
-                       "• Try rephrasing your question"
-            elif "401" in error_str or "unauthorized" in error_str.lower():
-                return "🔑 Authentication failed with Google AI. Please verify:\n" \
-                       "• Your API key is correct\n" \
-                       "• The API key has the necessary permissions\n" \
-                       "• The API is enabled in your Google Cloud project"
-            elif "429" in error_str or "quota" in error_str.lower():
-                return "⏱️ Rate limit exceeded. Please:\n" \
-                       "• Wait a few minutes before trying again\n" \
-                       "• Check your API quota limits\n" \
-                       "• Consider upgrading your API plan if needed"
-            else:
-                return f"❌ I encountered an error while processing your question:\n{error_str}\n\n" \
-                       "💡 Troubleshooting tips:\n" \
-                       "• Check your internet connection\n" \
-                       "• Verify your Google API key is valid\n" \
-                       "• Try asking a simpler question\n" \
-                       "• Report persistent issues at: https://developers.generativeai.google/guide/troubleshooting"
+            except KeyboardInterrupt:
+                logger.warning("Generation stopped by user")
+                return "⚠️ Chat stopped by user."
+            except Exception as e:
+                error_str = str(e)
+                logger.error(f"Error answering question (attempt {attempt + 1}): {error_str}")
+                
+                # Check if this is a retryable error
+                is_retryable = (
+                    "500" in error_str or 
+                    "502" in error_str or 
+                    "503" in error_str or
+                    "temporarily unavailable" in error_str.lower() or
+                    "service unavailable" in error_str.lower() or
+                    "timeout" in error_str.lower()
+                )
+                
+                # If this is the last attempt or error is not retryable, return error message
+                if attempt == max_retries or not is_retryable:
+                    # Handle specific Google API errors
+                    if "500 An internal error has occurred" in error_str:
+                        return "🔧 Google AI service is temporarily unavailable. This could be due to:\n" \
+                               "• API quota limits reached\n" \
+                               "• Temporary service outage\n" \
+                               "• High request volume\n\n" \
+                               "Please try again in a few minutes. If the issue persists, check your API quota at: " \
+                               "https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas"
+                    elif "400" in error_str or "invalid" in error_str.lower():
+                        return "❌ Invalid request to Google AI service. Please check:\n" \
+                               "• Your API key is valid\n" \
+                               "• The request format is correct\n" \
+                               "• Try rephrasing your question"
+                    elif "401" in error_str or "unauthorized" in error_str.lower():
+                        return "🔑 Authentication failed with Google AI. Please verify:\n" \
+                               "• Your API key is correct\n" \
+                               "• The API key has the necessary permissions\n" \
+                               "• The API is enabled in your Google Cloud project"
+                    elif "429" in error_str or "quota" in error_str.lower():
+                        return "⏱️ Rate limit exceeded. Please:\n" \
+                               "• Wait a few minutes before trying again\n" \
+                               "• Check your API quota limits\n" \
+                               "• Consider upgrading your API plan if needed"
+                    else:
+                        return f"❌ I encountered an error while processing your question:\n{error_str}\n\n" \
+                               "💡 Troubleshooting tips:\n" \
+                               "• Check your internet connection\n" \
+                               "• Verify your Google API key is valid\n" \
+                               "• Try asking a simpler question\n" \
+                               "• Report persistent issues at: https://developers.generativeai.google/guide/troubleshooting"
+                else:
+                    # Wait a bit before retrying
+                    import time
+                    wait_time = (attempt + 1) * 2  # 2, 4, 6 seconds
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    continue
+        
+        # This should never be reached, but just in case
+        return "❌ Failed to process question after multiple attempts."
 
     def answer_with_sources(self, question: str) -> Dict[str, Any]:
         """
