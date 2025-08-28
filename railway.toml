@@ -1,13 +1,20 @@
 [build]
 builder = "nixpacks"
-buildCommand = "pip install -r requirements.txt"
+buildCommand = "pip install --no-cache-dir -r requirements.txt"
 
 [deploy]
-startCommand = "uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1"
+startCommand = "uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 30"
 healthcheckPath = "/health"
-healthcheckTimeout = 60
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
+healthcheckInterval = 300
+minInstances = 1
 
 [env]
 PYTHONPATH = "/app"
 PYTHON_VERSION = "3.11"
+PYTHONUNBUFFERED = "1"
+
+[settings]
+# Increase build timeout
+buildTimeout = 600

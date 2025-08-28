@@ -371,20 +371,43 @@ async def delete_chat(chat_id: str):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with database stats"""
+    """Health check endpoint with comprehensive system status"""
     try:
-        db_stats = db.get_stats()
+        # Check environment variables
+        env_status = {
+            "google_api_key": bool(os.getenv("GOOGLE_API_KEY")),
+            "port": os.getenv("PORT", "8000"),
+            "python_version": os.getenv("PYTHON_VERSION", "Unknown")
+        }
+        
+        # Check database
+        try:
+            db_stats = db.get_stats()
+            db_status = "healthy"
+        except Exception as db_error:
+            db_stats = {"error": str(db_error)}
+            db_status = "unhealthy"
+        
+        # Overall health status
+        overall_status = "healthy" if env_status["google_api_key"] and db_status == "healthy" else "degraded"
+        
         return {
-            "status": "healthy",
-            "active_chats_in_memory": len(chat_storage),
-            "active_streams": len(active_streams),
-            "total_chats_in_db": db_stats.get("total_chats", 0),
-            "total_messages_in_db": db_stats.get("total_messages", 0),
-            "last_chat_date": db_stats.get("last_chat_date"),
-            "timestamp": datetime.now().isoformat()
+            "status": overall_status,
+            "environment": env_status,
+            "database": {
+                "status": db_status,
+                "stats": db_stats
+            },
+            "memory": {
+                "active_chats": len(chat_storage),
+                "active_streams": len(active_streams)
+            },
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0"
         }
     except Exception as e:
         logger.error(f"Health check error: {e}")
+        # Return 200 but indicate unhealthy status
         return {
             "status": "unhealthy",
             "error": str(e),
