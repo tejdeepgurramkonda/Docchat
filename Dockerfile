@@ -32,5 +32,5 @@ ENV PORT=8000
 # Expose port
 EXPOSE $PORT
 
-# Run the application - Railway will override this CMD with railway.toml startCommand
-CMD uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
+# Run the application using our Python startup script
+CMD ["python", "railway_start.py"]
