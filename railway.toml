@@ -1,23 +1,11 @@
 [build]
 builder = "nixpacks"
-buildCommand = "pip install --no-cache-dir -r requirements.txt"
 
 [deploy]
-startCommand = "python -m uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 30"
+startCommand = "python -m uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1"
 healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
-healthcheckInterval = 300
-minInstances = 1
 
 [env]
-PYTHONPATH = "/app"
-PYTHON_VERSION = "3.11"
 PYTHONUNBUFFERED = "1"
-NIXPACKS_PYTHON_VERSION = "3.11"
-
-[settings]
-# Increase build timeout
-buildTimeout = 600
-# Force nixpacks instead of Dockerfile
-buildProvider = "nixpacks"
