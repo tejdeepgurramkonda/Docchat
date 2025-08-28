@@ -36,10 +36,33 @@ try:
     from utils.qa_engine import QAEngine, stop_generation, reset_stop
     from database import db
     logger.info("All utility modules imported successfully")
+    
+    # Set import flags
+    IMPORTS_SUCCESSFUL = True
+    
 except Exception as e:
     logger.error(f"Error importing utility modules: {e}")
-    # Create a minimal FastAPI app for health checks even if imports fail
-    pass
+    IMPORTS_SUCCESSFUL = False
+    
+    # Create placeholder classes/functions to prevent NameError
+    class FileHandler:
+        pass
+    class TextChunker:
+        pass
+    class DocumentEmbedder:
+        pass
+    class QAEngine:
+        pass
+    def stop_generation():
+        pass
+    def reset_stop():
+        pass
+    
+    # Minimal database handler
+    class DummyDB:
+        def get_stats(self):
+            return {"error": "Database not available"}
+    db = DummyDB()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -95,6 +118,10 @@ async def read_root(request: Request):
 @app.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
     """Upload and process document"""
+    # Check if imports were successful
+    if not IMPORTS_SUCCESSFUL:
+        raise HTTPException(status_code=500, detail="Server configuration error. Please check server logs.")
+    
     try:
         # Validate file type
         if not file.filename.lower().endswith(('.pdf', '.txt', '.docx')):
@@ -396,10 +423,14 @@ async def health_check():
             db_status = "unhealthy"
         
         # Overall health status
-        overall_status = "healthy" if env_status["google_api_key"] and db_status == "healthy" else "degraded"
+        overall_status = "healthy" if env_status["google_api_key"] and db_status == "healthy" and IMPORTS_SUCCESSFUL else "degraded"
         
         return {
             "status": overall_status,
+            "imports": {
+                "status": "successful" if IMPORTS_SUCCESSFUL else "failed",
+                "modules_available": IMPORTS_SUCCESSFUL
+            },
             "environment": env_status,
             "database": {
                 "status": db_status,

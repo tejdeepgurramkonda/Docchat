@@ -6,7 +6,6 @@ Handles text embedding and vector store creation
 import logging
 import os
 import pickle
-from turtle import st
 from typing import List, Optional
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -38,7 +37,7 @@ class DocumentEmbedder:
             logger.info(f"Initialized Google Gemini embeddings with model: {model_name}")
         except Exception as e:
             logger.error(f"Failed to initialize Google Gemini embeddings: {str(e)}")
-            st.error("Failed to initialize embeddings. Please check your Google API key.")
+            raise e  # Re-raise the exception for proper error handling
     
     def create_vector_store(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> Optional[FAISS]:
         """
@@ -75,7 +74,6 @@ class DocumentEmbedder:
             
         except Exception as e:
             logger.error(f"Error creating vector store: {str(e)}")
-            st.error(f"Failed to create vector store: {str(e)}")
             return None
     
     def add_texts(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> bool:
