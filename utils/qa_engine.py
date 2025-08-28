@@ -54,34 +54,67 @@ class QAEngine:
     Handles question answering using RAG with Google Gemini models
     """
 
-    def __init__(self, vector_store, model_name: str = "gemini-2.5-pro", temperature: float = 0.7):
+    def __init__(self, vector_store, model_name: str = "gemini-1.5-pro", temperature: float = 0.7):
         self.vector_store = vector_store
         self.model_name = model_name
         self.temperature = temperature
         self.llm = None
         self.qa_chain = None
 
-        # Initialize the language model
-        try:
-            # Some versions require streaming=True for token callbacks; others ignore it.
+        # Initialize the language model with fallback
+        self._initialize_llm_with_fallback(model_name, temperature)
+
+    def _initialize_llm_with_fallback(self, primary_model: str, temperature: float):
+        """Initialize LLM with fallback to stable models if primary fails"""
+        
+        # Define fallback models in order of preference
+        fallback_models = [
+            primary_model,
+            "gemini-1.5-pro",      # Most stable production model
+            "gemini-1.5-flash",    # Faster alternative
+            "gemini-pro"           # Legacy fallback
+        ]
+        
+        # Remove duplicates while preserving order
+        models_to_try = []
+        for model in fallback_models:
+            if model not in models_to_try:
+                models_to_try.append(model)
+        
+        last_error = None
+        
+        for model_name in models_to_try:
             try:
-                self.llm = ChatGoogleGenerativeAI(
-                    model=model_name,
-                    temperature=temperature,
-                    max_output_tokens=1000,
-                    streaming=True  # If unsupported, the outer except will retry without it.
-                )
-            except TypeError:
-                self.llm = ChatGoogleGenerativeAI(
-                    model=model_name,
-                    temperature=temperature,
-                    max_output_tokens=1000
-                )
-            logger.info(f"Initialized ChatGoogleGenerativeAI with model: {model_name}")
-        except Exception as e:
-            logger.error(f"Failed to initialize ChatGoogleGenerativeAI: {str(e)}")
-            # Note: This is handled at FastAPI level, not Streamlit
-            raise e
+                logger.info(f"Attempting to initialize with model: {model_name}")
+                
+                # Some versions require streaming=True for token callbacks; others ignore it.
+                try:
+                    self.llm = ChatGoogleGenerativeAI(
+                        model=model_name,
+                        temperature=temperature,
+                        max_output_tokens=1000,
+                        streaming=True  # If unsupported, the outer except will retry without it.
+                    )
+                except TypeError:
+                    self.llm = ChatGoogleGenerativeAI(
+                        model=model_name,
+                        temperature=temperature,
+                        max_output_tokens=1000
+                    )
+                
+                # Update the model name to reflect what actually worked
+                self.model_name = model_name
+                logger.info(f"✅ Successfully initialized ChatGoogleGenerativeAI with model: {model_name}")
+                break
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"❌ Failed to initialize with model {model_name}: {str(e)}")
+                continue
+        
+        if self.llm is None:
+            logger.error(f"Failed to initialize any model. Last error: {str(last_error)}")
+            raise last_error
 
         # Create custom prompt template & QA chain
         self.prompt_template = self._create_prompt_template()
@@ -304,19 +337,9 @@ Answer:"""
         try:
             if temperature is not None:
                 self.temperature = temperature
-            try:
-                self.llm = ChatGoogleGenerativeAI(
-                    model=self.model_name,
-                    temperature=self.temperature,
-                    max_output_tokens=max_tokens or 1000,
-                    streaming=True
-                )
-            except TypeError:
-                self.llm = ChatGoogleGenerativeAI(
-                    model=self.model_name,
-                    temperature=self.temperature,
-                    max_output_tokens=max_tokens or 1000
-                )
+            
+            # Use fallback logic when updating model parameters
+            self._initialize_llm_with_fallback(self.model_name, self.temperature)
             self._initialize_qa_chain()
             logger.info(f"Updated model parameters: temperature={self.temperature}")
         except Exception as e:
