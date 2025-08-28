@@ -161,8 +161,39 @@ Answer:"""
             logger.warning("Generation stopped by user")
             return "⚠️ Chat stopped by user."
         except Exception as e:
-            logger.error(f"Error answering question: {str(e)}")
-            return f"I encountered an error while processing your question: {str(e)}"
+            error_str = str(e)
+            logger.error(f"Error answering question: {error_str}")
+            
+            # Handle specific Google API errors
+            if "500 An internal error has occurred" in error_str:
+                return "🔧 Google AI service is temporarily unavailable. This could be due to:\n" \
+                       "• API quota limits reached\n" \
+                       "• Temporary service outage\n" \
+                       "• High request volume\n\n" \
+                       "Please try again in a few minutes. If the issue persists, check your API quota at: " \
+                       "https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas"
+            elif "400" in error_str or "invalid" in error_str.lower():
+                return "❌ Invalid request to Google AI service. Please check:\n" \
+                       "• Your API key is valid\n" \
+                       "• The request format is correct\n" \
+                       "• Try rephrasing your question"
+            elif "401" in error_str or "unauthorized" in error_str.lower():
+                return "🔑 Authentication failed with Google AI. Please verify:\n" \
+                       "• Your API key is correct\n" \
+                       "• The API key has the necessary permissions\n" \
+                       "• The API is enabled in your Google Cloud project"
+            elif "429" in error_str or "quota" in error_str.lower():
+                return "⏱️ Rate limit exceeded. Please:\n" \
+                       "• Wait a few minutes before trying again\n" \
+                       "• Check your API quota limits\n" \
+                       "• Consider upgrading your API plan if needed"
+            else:
+                return f"❌ I encountered an error while processing your question:\n{error_str}\n\n" \
+                       "💡 Troubleshooting tips:\n" \
+                       "• Check your internet connection\n" \
+                       "• Verify your Google API key is valid\n" \
+                       "• Try asking a simpler question\n" \
+                       "• Report persistent issues at: https://developers.generativeai.google/guide/troubleshooting"
 
     def answer_with_sources(self, question: str) -> Dict[str, Any]:
         """
@@ -275,3 +306,39 @@ Answer:"""
             "qa_chain_initialized": self.qa_chain is not None,
             "llm_initialized": self.llm is not None
         }
+    
+    def validate_api_connection(self) -> Dict[str, Any]:
+        """
+        Validate Google API connection and return status
+        """
+        import os
+        
+        validation_result = {
+            "api_key_present": bool(os.getenv("GOOGLE_API_KEY")),
+            "llm_initialized": self.llm is not None,
+            "connection_test": "not_tested",
+            "error": None
+        }
+        
+        # Test basic API connection with a simple query
+        if validation_result["api_key_present"] and validation_result["llm_initialized"]:
+            try:
+                # Simple test query
+                test_response = self.llm.invoke("Say 'API connection successful'")
+                if test_response and test_response.content:
+                    validation_result["connection_test"] = "successful"
+                    validation_result["test_response"] = test_response.content[:50]
+                else:
+                    validation_result["connection_test"] = "failed"
+                    validation_result["error"] = "Empty response from API"
+            except Exception as e:
+                validation_result["connection_test"] = "failed"
+                validation_result["error"] = str(e)
+        else:
+            validation_result["connection_test"] = "skipped"
+            if not validation_result["api_key_present"]:
+                validation_result["error"] = "GOOGLE_API_KEY not set"
+            elif not validation_result["llm_initialized"]:
+                validation_result["error"] = "LLM not initialized"
+        
+        return validation_result

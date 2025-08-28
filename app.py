@@ -410,6 +410,7 @@ async def health_check():
         # Check environment variables
         env_status = {
             "google_api_key": bool(os.getenv("GOOGLE_API_KEY")),
+            "google_api_key_format": os.getenv("GOOGLE_API_KEY", "").startswith("AIzaSy") if os.getenv("GOOGLE_API_KEY") else False,
             "port": os.getenv("PORT", "8000"),
             "python_version": os.getenv("PYTHON_VERSION", "Unknown")
         }
@@ -423,7 +424,8 @@ async def health_check():
             db_status = "unhealthy"
         
         # Overall health status
-        overall_status = "healthy" if env_status["google_api_key"] and db_status == "healthy" and IMPORTS_SUCCESSFUL else "degraded"
+        api_ready = env_status["google_api_key"] and env_status["google_api_key_format"]
+        overall_status = "healthy" if api_ready and db_status == "healthy" and IMPORTS_SUCCESSFUL else "degraded"
         
         return {
             "status": overall_status,
@@ -432,6 +434,10 @@ async def health_check():
                 "modules_available": IMPORTS_SUCCESSFUL
             },
             "environment": env_status,
+            "api": {
+                "ready": api_ready,
+                "diagnostics_endpoint": "/admin/api-diagnostics"
+            },
             "database": {
                 "status": db_status,
                 "stats": db_stats
@@ -465,6 +471,103 @@ async def cleanup_old_chats(days_old: int = 30):
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
         raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+
+@app.get("/admin/api-diagnostics")
+async def api_diagnostics():
+    """
+    Diagnose Google API connection issues
+    """
+    try:
+        # Check if imports were successful
+        if not IMPORTS_SUCCESSFUL:
+            return {
+                "status": "error",
+                "message": "Server modules not properly imported",
+                "imports_successful": False
+            }
+        
+        # Check environment variables
+        import os
+        api_key_present = bool(os.getenv("GOOGLE_API_KEY"))
+        api_key_length = len(os.getenv("GOOGLE_API_KEY", "")) if api_key_present else 0
+        
+        diagnostics = {
+            "environment": {
+                "api_key_present": api_key_present,
+                "api_key_length": api_key_length,
+                "api_key_format_valid": api_key_present and os.getenv("GOOGLE_API_KEY", "").startswith("AIzaSy")
+            },
+            "imports_successful": IMPORTS_SUCCESSFUL,
+            "chats_with_qa_engines": len(chat_storage)
+        }
+        
+        # Test API connection if possible
+        if chat_storage:
+            # Use an existing QA engine to test connection
+            chat_id = next(iter(chat_storage))
+            qa_engine = chat_storage[chat_id].get("qa_engine")
+            if qa_engine:
+                diagnostics["api_test"] = qa_engine.validate_api_connection()
+            else:
+                diagnostics["api_test"] = {"status": "no_qa_engine", "message": "No QA engine available for testing"}
+        else:
+            # Create a temporary QA engine for testing
+            try:
+                from utils.embedder import DocumentEmbedder
+                from utils.qa_engine import QAEngine
+                
+                # Create minimal vector store for testing
+                embedder = DocumentEmbedder()
+                vector_store = embedder.create_vector_store(["Test document for API validation"])
+                qa_engine = QAEngine(vector_store)
+                
+                diagnostics["api_test"] = qa_engine.validate_api_connection()
+            except Exception as e:
+                diagnostics["api_test"] = {
+                    "status": "error",
+                    "message": f"Could not create test QA engine: {str(e)}"
+                }
+        
+        return {
+            "status": "success",
+            "diagnostics": diagnostics,
+            "recommendations": _get_api_recommendations(diagnostics)
+        }
+        
+    except Exception as e:
+        logger.error(f"API diagnostics error: {e}")
+        return {
+            "status": "error",
+            "message": f"Diagnostics failed: {str(e)}"
+        }
+
+def _get_api_recommendations(diagnostics: dict) -> list:
+    """Generate recommendations based on diagnostic results"""
+    recommendations = []
+    
+    env = diagnostics.get("environment", {})
+    
+    if not env.get("api_key_present"):
+        recommendations.append("❌ Set the GOOGLE_API_KEY environment variable")
+    elif not env.get("api_key_format_valid"):
+        recommendations.append("❌ API key format appears invalid (should start with 'AIzaSy')")
+    
+    api_test = diagnostics.get("api_test", {})
+    if api_test.get("connection_test") == "failed":
+        error = api_test.get("error", "")
+        if "500" in error:
+            recommendations.append("⚠️ Google API is experiencing issues - try again later")
+        elif "401" in error or "unauthorized" in error.lower():
+            recommendations.append("🔑 Check your API key permissions and project settings")
+        elif "429" in error or "quota" in error.lower():
+            recommendations.append("⏱️ API quota exceeded - check your usage limits")
+        else:
+            recommendations.append(f"🔧 API connection failed: {error}")
+    
+    if not recommendations:
+        recommendations.append("✅ All checks passed - API should be working correctly")
+    
+    return recommendations
 
 if __name__ == "__main__":
     import uvicorn
