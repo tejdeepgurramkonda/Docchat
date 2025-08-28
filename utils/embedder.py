@@ -6,6 +6,7 @@ Handles text embedding and vector store creation
 import logging
 import os
 import pickle
+from turtle import st
 from typing import List, Optional
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
