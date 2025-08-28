@@ -18,21 +18,28 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 # Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import utility modules
-from utils.file_handler import FileHandler
-from utils.chunker import TextChunker
-from utils.embedder import DocumentEmbedder
-from utils.qa_engine import QAEngine, stop_generation, reset_stop
-from database import db
-
-# Load environment variables
+# Load environment variables first
 load_dotenv()
 
 # Production settings
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 PORT = int(os.getenv("PORT", 8000))
+
+# Import utility modules with error handling
+try:
+    from utils.file_handler import FileHandler
+    from utils.chunker import TextChunker
+    from utils.embedder import DocumentEmbedder
+    from utils.qa_engine import QAEngine, stop_generation, reset_stop
+    from database import db
+    logger.info("All utility modules imported successfully")
+except Exception as e:
+    logger.error(f"Error importing utility modules: {e}")
+    # Create a minimal FastAPI app for health checks even if imports fail
+    pass
 
 # Initialize FastAPI app
 app = FastAPI(

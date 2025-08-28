@@ -6,7 +6,6 @@ Handles question answering using RAG (Retrieval-Augmented Generation)
 import logging
 from typing import List, Dict, Any
 import threading
-import streamlit as st
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
@@ -81,7 +80,8 @@ class QAEngine:
             logger.info(f"Initialized ChatGoogleGenerativeAI with model: {model_name}")
         except Exception as e:
             logger.error(f"Failed to initialize ChatGoogleGenerativeAI: {str(e)}")
-            st.error("Failed to initialize language model. Please check your Google API key.")
+            # Note: This is handled at FastAPI level, not Streamlit
+            raise e
 
         # Create custom prompt template & QA chain
         self.prompt_template = self._create_prompt_template()
@@ -128,7 +128,8 @@ Answer:"""
             logger.info("QA chain initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing QA chain: {str(e)}")
-            st.error(f"Failed to initialize QA system: {str(e)}")
+            # Note: This is handled at FastAPI level, not Streamlit
+            raise e
 
     def answer_question(self, question: str) -> str:
         """

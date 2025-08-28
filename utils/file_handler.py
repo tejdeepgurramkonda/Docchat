@@ -8,7 +8,6 @@ import logging
 from typing import Optional
 import fitz  # PyMuPDF
 from docx import Document
-import streamlit as st
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -205,12 +204,12 @@ class FileHandler:
             
             # Check file size
             if file_info['size'] > max_size_mb * 1024 * 1024:
-                st.error(f"File size ({file_info['size'] / 1024 / 1024:.1f} MB) exceeds maximum allowed size ({max_size_mb} MB)")
+                logger.error(f"File size ({file_info['size'] / 1024 / 1024:.1f} MB) exceeds maximum allowed size ({max_size_mb} MB)")
                 return False
             
             # Check file extension
             if file_info['extension'] not in self.supported_formats:
-                st.error(f"Unsupported file format: {file_info['extension']}")
+                logger.error(f"Unsupported file format: {file_info['extension']}")
                 return False
             
             return True

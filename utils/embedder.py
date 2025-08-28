@@ -10,7 +10,6 @@ from typing import List, Optional
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-import streamlit as st
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
